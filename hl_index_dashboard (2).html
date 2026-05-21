@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hyperliquid Index Depth Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0c0d0f;
+    --bg2:     #111318;
+    --bg3:     #181c23;
+    --border:  rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text:    #e8eaf0;
+    --muted:   #6b7280;
+    --dim:     #3d4450;
+    --green:   #22c97a;
+    --green-d: rgba(34,201,122,0.13);
+    --red:     #f05c5c;
+    --red-d:   rgba(240,92,92,0.11);
+    --amber:   #f5a623;
+    --blue:    #5b9cf6;
+    --mono:    'IBM Plex Mono', monospace;
+    --sans:    'IBM Plex Sans', sans-serif;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px; border-bottom: 1px solid var(--border);
+    background: var(--bg2); gap: 12px;
+  }
+  .h-left { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .instrument { font-family: var(--mono); font-size: 15px; font-weight: 500; letter-spacing: .07em; }
+  .tag {
+    font-size: 10px; font-family: var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--dim); padding: 2px 7px; border-radius: 3px;
+  }
+  #live-price { font-family: var(--mono); font-size: 22px; font-weight: 500; transition: color .35s; }
+  .price-up   { color: var(--green) !important; }
+  .price-down { color: var(--red)   !important; }
+  #coin-detected { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+  .h-right { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  #status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); display: inline-block; transition: background .3s; }
+  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #status-dot.err  { background: var(--red); }
+  #updated-at { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  #refresh-btn {
+    background: transparent; border: 1px solid var(--dim); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; padding: 5px 12px; border-radius: 4px;
+    cursor: pointer; transition: .2s;
+  }
+  #refresh-btn:hover { border-color: var(--border2); color: var(--text); }
+
+  /* Index toggle */
+  .index-toggle {
+    display: flex; align-items: center; gap: 3px;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 5px; padding: 3px;
+  }
+  .idx-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    padding: 4px 12px; border-radius: 3px; border: none; cursor: pointer;
+    background: transparent; color: var(--muted); transition: .18s;
+  }
+  .idx-btn:hover { color: var(--text); }
+  .idx-btn.active {
+    background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border2); box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
+
+  main { padding: 20px 28px; display: flex; flex-direction: column; gap: 18px; }
+  @keyframes fadein { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+  main { animation: fadein .4s ease; }
+
+  .bar { border-radius: 6px; padding: 10px 16px; font-family: var(--mono); font-size: 12px; display: none; }
+  #err-bar  { background: var(--red-d);              border: 1px solid rgba(240,92,92,.25); color: var(--red); }
+  #info-bar { background: rgba(91,156,246,.08);      border: 1px solid rgba(91,156,246,.2); color: var(--blue); }
+
+  .cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 13px; }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 18px 20px; position: relative; overflow: hidden;
+  }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .card.green::before { background: var(--green); }
+  .card.amber::before { background: var(--amber); }
+  .card-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .card-value { font-family: var(--mono); font-size: 26px; font-weight: 500; color: var(--text); margin-bottom: 10px; min-height: 34px; }
+  .card-sides { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 3px; }
+  .chip.bid { background: var(--green-d); color: var(--green); }
+  .chip.ask { background: var(--red-d);   color: var(--red);   }
+  .card-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  @keyframes shimmer { 0%,100%{opacity:.3} 50%{opacity:.6} }
+  .loading { animation: shimmer 1.4s ease-in-out infinite; }
+
+  .body-row { display: grid; grid-template-columns: 380px 1fr; gap: 14px; }
+
+  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .panel-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 16px; border-bottom: 1px solid var(--border);
+  }
+  .panel-title { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .panel-ts    { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+  .mid-row {
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px; gap: 10px; border-bottom: 1px solid var(--border);
+  }
+  .mid-lbl { font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  #mid-val    { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  #spread-val { font-family: var(--mono); font-size: 11px; color: var(--amber); }
+
+  .depth-cols { display: grid; grid-template-columns: 1fr 1fr; }
+  .depth-side { padding: 8px 0; }
+  .depth-side-lbl {
+    font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+    padding: 0 13px 6px; display: flex; justify-content: space-between;
+  }
+  .depth-side-lbl.bid { color: var(--green); border-right: 1px solid var(--border); }
+  .depth-side-lbl.ask { color: var(--red); }
+  .depth-row { display: flex; align-items: center; padding: 2px 13px; gap: 5px; position: relative; }
+  .depth-fill { position: absolute; top: 0; bottom: 0; pointer-events: none; opacity: .14; }
+  .bid .depth-fill { right: 0; background: var(--green); }
+  .ask .depth-fill { left:  0; background: var(--red);   }
+  .depth-price { font-family: var(--mono); font-size: 12px; flex: 1; }
+  .bid .depth-price { color: var(--green); text-align: right; }
+  .ask .depth-price { color: var(--red); }
+  .depth-bps  { font-family: var(--mono); font-size: 10px; color: var(--dim); min-width: 30px; text-align: center; }
+  .depth-size { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  .vol-panel { display: flex; flex-direction: column; }
+  .vol-legend {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px 16px 4px; border-bottom: 1px solid var(--border);
+  }
+  .leg { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .leg-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .leg-line { width: 14px; border-top: 1.5px dashed var(--amber); }
+  .vol-body { flex: 1; padding: 14px 16px; }
+
+  /* WebSocket live badge */
+  .ws-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    color: var(--muted); transition: color .3s;
+  }
+  .ws-badge .ws-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--dim); transition: background .3s;
+  }
+  .ws-badge.streaming { color: var(--green); }
+  .ws-badge.streaming .ws-dot { background: var(--green); box-shadow: 0 0 5px var(--green); animation: wsPulse 2s ease infinite; }
+  .ws-badge.reconnecting { color: var(--amber); }
+  .ws-badge.reconnecting .ws-dot { background: var(--amber); }
+  .ws-badge.error { color: var(--red); }
+  .ws-badge.error .ws-dot { background: var(--red); }
+  @keyframes wsPulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-left">
+    <div class="index-toggle">
+      <button class="idx-btn active" data-idx="XYZ100" onclick="switchIndex('XYZ100')">XYZ100</button>
+      <button class="idx-btn"        data-idx="SP500"  onclick="switchIndex('SP500')">SP500</button>
+    </div>
+    <span class="instrument" id="instrument-label">XYZ100-USDC</span>
+    <span class="tag">Hyperliquid Perp</span>
+    <span id="live-price" class="loading">—</span>
+    <span id="coin-detected"></span>
+  </div>
+  <div class="h-right">
+    <span id="updated-at">—</span>
+    <span id="status-dot"></span>
+    <button id="refresh-btn" onclick="loadCandles()">↺ refresh vol</button>
+  </div>
+</header>
+
+<main>
+  <div id="err-bar"  class="bar"></div>
+  <div id="info-bar" class="bar"></div>
+
+  <div class="cards">
+    <div class="card green">
+      <div class="card-label">Depth ± 5 bps <span style="opacity:.5;font-size:9px">(full precision)</span></div>
+      <div class="card-value loading" id="d5-total">—</div>
+      <div class="card-sides">
+        <span class="chip bid" id="d5-bid">bid —</span>
+        <span class="chip ask" id="d5-ask">ask —</span>
+      </div>
+    </div>
+    <div class="card green">
+      <div class="card-label">Depth ± 8 bps <span style="opacity:.5;font-size:9px">(full precision)</span></div>
+      <div class="card-value loading" id="d8-total">—</div>
+      <div class="card-sides">
+        <span class="chip bid" id="d8-bid">bid —</span>
+        <span class="chip ask" id="d8-ask">ask —</span>
+      </div>
+    </div>
+    <div class="card green">
+      <div class="card-label">Depth ± 20 bps <span style="opacity:.5;font-size:9px">(full precision)</span></div>
+      <div class="card-value loading" id="d20-total">—</div>
+      <div class="card-sides">
+        <span class="chip bid" id="d20-bid">bid —</span>
+        <span class="chip ask" id="d20-ask">ask —</span>
+      </div>
+    </div>
+    <div class="card amber">
+      <div class="card-label">Avg Daily Volume — 30d</div>
+      <div class="card-value loading" id="adv-val">—</div>
+      <div class="card-sub" id="adv-sub"></div>
+    </div>
+  </div>
+
+  <div class="body-row">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Order book — $100 buckets, top 20 levels</span>
+        <span id="ws-badge" class="ws-badge">
+          <span class="ws-dot"></span>
+          <span id="ws-label">connecting</span>
+          &nbsp;·&nbsp;
+          <span id="book-ts"></span>
+        </span>
+      </div>
+      <div class="mid-row">
+        <span class="mid-lbl">mid</span>
+        <span id="mid-val">—</span>
+        <span class="mid-lbl">spread</span>
+        <span id="spread-val">—</span>
+      </div>
+      <div class="depth-cols">
+        <div class="depth-side bid" id="bid-col">
+          <div class="depth-side-lbl bid"><span>price</span><span>size</span></div>
+        </div>
+        <div class="depth-side ask" id="ask-col">
+          <div class="depth-side-lbl ask"><span>price</span><span>size</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel vol-panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Daily volume — last 30 days (USD notional)</span>
+        <span class="panel-ts" id="vol-range"></span>
+      </div>
+      <div class="vol-legend">
+        <div class="leg"><span class="leg-swatch" style="background:rgba(34,201,122,.45)"></span>daily vol</div>
+        <div class="leg"><span class="leg-line"></span>30d avg</div>
+      </div>
+      <div class="vol-body">
+        <div style="position:relative;width:100%;height:230px;">
+          <canvas id="volChart" role="img" aria-label="Daily volume on Hyperliquid, last 30 days"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ── Index configs ──────────────────────────────────────────────────── */
+const INDICES = {
+  XYZ100: {
+    label:      'XYZ100-USDC',
+    scanLabel:  'XYZ100',
+    names:      ['xyz:XYZ100', 'XYZ100'],
+    nameRegex:  /xyz.?100/i,
+    // price range hint for allMids scan (XYZ100 ~ 18000–22000 like Nasdaq)
+    priceMin:   15000,
+    priceMax:   25000,
+    metaRegex:  /xyz.?100/i,
+    notFound:   'xyz:XYZ100 not found on Hyperliquid. The instrument may be unavailable or the API changed.',
+  },
+  SP500: {
+    label:      'S&P500-USDC',
+    scanLabel:  'S&P500',
+    names:      ['xyz:SP500', 'S&P500', 'SP500', 'SPX500'],
+    nameRegex:  /s.?p.?500|spx/i,
+    priceMin:   4000,
+    priceMax:   9000,
+    metaRegex:  /s.?p.?500|spx/i,
+    notFound:   'xyz:SP500 not found on Hyperliquid. The instrument may be unavailable or the API changed.',
+  },
+};
+
+let activeIdx = 'XYZ100';
+
+/* ── State ──────────────────────────────────────────────────────────── */
+const API    = 'https://api.hyperliquid.xyz/info';
+const WS_URL = 'wss://api.hyperliquid.xyz/ws';
+
+let volChart      = null;
+let lastMid       = null;
+let candleTimer   = null;   // REST candle refresh (every 5 min)
+let ws            = null;   // active WebSocket
+let wsReconnTimer = null;   // reconnect backoff timer
+let wsReconnDelay = 2000;   // current backoff delay (ms)
+let wsActiveCoin  = null;   // coin the WS is currently subscribed to
+let wsIntended    = true;   // false = deliberately closed (index switch / page hide)
+
+const resolvedCoins = { XYZ100: null, SP500: null };
+
+/* ── Toggle ─────────────────────────────────────────────────────────── */
+function switchIndex(idx) {
+  if (idx === activeIdx) return;
+  activeIdx = idx;
+
+  document.querySelectorAll('.idx-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.idx === idx));
+  document.getElementById('instrument-label').textContent = INDICES[idx].label;
+
+  // Reset display
+  lastMid = null;
+  document.getElementById('live-price').textContent = '—';
+  document.getElementById('live-price').className = 'loading';
+  document.getElementById('coin-detected').textContent = '';
+  document.getElementById('mid-val').textContent = '—';
+  document.getElementById('spread-val').textContent = '—';
+  document.getElementById('book-ts').textContent = '';
+  document.getElementById('vol-range').textContent = '';
+  document.getElementById('adv-sub').textContent = '';
+  ['d5-total','d8-total','d20-total','adv-val'].forEach(id => {
+    const el = document.getElementById(id);
+    el.textContent = '—';
+    el.classList.add('loading');
+  });
+  ['d5-bid','d5-ask','d8-bid','d8-ask','d20-bid','d20-ask'].forEach(id =>
+    document.getElementById(id).textContent = id.includes('bid') ? 'bid —' : 'ask —');
+  document.getElementById('bid-col').innerHTML =
+    '<div class="depth-side-lbl bid"><span>price</span><span>size</span></div>';
+  document.getElementById('ask-col').innerHTML =
+    '<div class="depth-side-lbl ask"><span>price</span><span>size</span></div>';
+  if (volChart) { volChart.destroy(); volChart = null; }
+
+  setWsBadge('connecting', 'connecting');
+  clearTimeout(candleTimer);
+  teardownWS();
+  initIndex(idx);
+}
+
+/* ── API helpers ────────────────────────────────────────────────────── */
+async function post(body) {
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + text.slice(0, 120));
+  return JSON.parse(text);
+}
+
+function fmtUSD(n) {
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  return '$' + n.toFixed(0);
+}
+function fmtP(p) { return p >= 1000 ? p.toFixed(1) : p.toFixed(2); }
+function getP(lv) { return parseFloat(lv.px ?? lv[0]); }
+function getS(lv) { return parseFloat(lv.sz ?? lv[1]); }
+
+function depthAt(levels, mid, factor, side) {
+  let total = 0;
+  for (const lv of levels) {
+    const p = getP(lv), s = getS(lv);
+    if (side === 'bid' && p >= mid * (1 - factor)) total += p * s;
+    if (side === 'ask' && p <= mid * (1 + factor)) total += p * s;
+  }
+  return total;
+}
+
+/* Bucket raw levels into $100 price buckets for the visual ladder */
+function bucketLevels(levels, bucketSize, side) {
+  const map = {};
+  for (const lv of levels) {
+    const p = getP(lv), s = getS(lv);
+    const key = side === 'bid'
+      ? Math.floor(p / bucketSize) * bucketSize
+      : Math.ceil(p / bucketSize) * bucketSize;
+    map[key] = (map[key] || 0) + s;
+  }
+  return Object.entries(map)
+    .map(([p, s]) => ({ px: p, sz: s }))
+    .sort((a, b) => side === 'bid' ? b.px - a.px : a.px - b.px);
+}
+
+/* ── WS badge ───────────────────────────────────────────────────────── */
+function setWsBadge(state, label) {
+  const badge = document.getElementById('ws-badge');
+  badge.className = 'ws-badge ' + state;
+  document.getElementById('ws-label').textContent = label;
+}
+
+/* ── Coin discovery (parameterised) ────────────────────────────────── */
+async function discoverCoin(cfg) {
+  for (const name of cfg.names) {
+    try {
+      const book = await post({ type: 'l2Book', coin: name, nSigFigs: 5 });
+      if (book.levels?.[0]?.length) return name;
+    } catch (_) {}
+  }
+
+  let allMids;
+  try {
+    allMids = await post({ type: 'allMids', dex: 'xyz' });
+    if (!allMids || typeof allMids !== 'object' || Array.isArray(allMids))
+      allMids = await post({ type: 'allMids' });
+  } catch (_) {
+    try { allMids = await post({ type: 'allMids' }); } catch (_) {}
+  }
+  if (allMids && typeof allMids === 'object') {
+    for (const [key] of Object.entries(allMids)) {
+      if (cfg.nameRegex.test(key)) {
+        try {
+          const book = await post({ type: 'l2Book', coin: key, nSigFigs: 5 });
+          if (book.levels?.[0]?.length) return key;
+        } catch (_) {}
+      }
+    }
+    const priceMatches = Object.entries(allMids)
+      .filter(([, v]) => { const p = parseFloat(v); return p > cfg.priceMin && p < cfg.priceMax; })
+      .sort(([,a],[,b]) => parseFloat(b) - parseFloat(a));
+    for (const [key] of priceMatches) {
+      try {
+        const book = await post({ type: 'l2Book', coin: key });
+        if (book.levels?.[0]?.length) return key;
+      } catch (_) {}
+    }
+  }
+
+  try {
+    const meta = await post({ type: 'meta' });
+    for (let i = 0; i < (meta.universe || []).length; i++) {
+      const u = meta.universe[i];
+      if (cfg.metaRegex.test(u.name)) {
+        for (const key of [u.name, '@' + i]) {
+          try {
+            const book = await post({ type: 'l2Book', coin: key, nSigFigs: 5 });
+            if (book.levels?.[0]?.length) return key;
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
+
+  throw new Error(cfg.notFound);
+}
+
+/* ── Book render ────────────────────────────────────────────────────── */
+function renderBook(bids, asks, mid) {
+  const N = 12;
+  const bidsB = bucketLevels(bids, 100, 'bid').slice(0, N);
+  const asksB = bucketLevels(asks, 100, 'ask').slice(0, N);
+  const maxSz = Math.max(...bidsB.map(lv => getS(lv)), ...asksB.map(lv => getS(lv)));
+  function rows(levels, side) {
+    return levels.map(lv => {
+      const p = getP(lv), s = getS(lv);
+      const fill = Math.max(3, Math.round((s / maxSz) * 100));
+      const bps  = ((Math.abs(mid - p) / mid) * 10000).toFixed(1);
+      return `<div class="depth-row ${side}">
+        <div class="depth-fill" style="width:${fill}%"></div>
+        <span class="depth-price">${fmtP(p)}</span>
+        <span class="depth-bps">${bps}b</span>
+        <span class="depth-size">${s.toFixed(3)}</span>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('bid-col').innerHTML =
+    '<div class="depth-side-lbl bid"><span>price</span><span>size</span></div>' + rows(bidsB, 'bid');
+  document.getElementById('ask-col').innerHTML =
+    '<div class="depth-side-lbl ask"><span>price</span><span>size</span></div>' + rows(asksB, 'ask');
+}
+
+/* ── Handle a live book tick ────────────────────────────────────────── */
+function applyBookTick(bids, asks) {
+  if (!bids?.length || !asks?.length) return;
+
+  const bestBid = getP(bids[0]);
+  const bestAsk = getP(asks[0]);
+  const mid     = (bestBid + bestAsk) / 2;
+  const spread  = bestAsk - bestBid;
+
+  const priceEl = document.getElementById('live-price');
+  if (lastMid !== null) {
+    priceEl.className = mid > lastMid ? 'price-up' : mid < lastMid ? 'price-down' : '';
+    setTimeout(() => priceEl.className = '', 700);
+  }
+  lastMid = mid;
+  priceEl.textContent = '$' + fmtP(mid);
+
+  document.getElementById('mid-val').textContent    = '$' + fmtP(mid);
+  document.getElementById('spread-val').textContent = '$' + spread.toFixed(2) + ' (' + (spread/mid*10000).toFixed(1) + ' bps)';
+
+  const b5  = depthAt(bids, mid, 0.0005, 'bid');
+  const a5  = depthAt(asks, mid, 0.0005, 'ask');
+  const b8  = depthAt(bids, mid, 0.0008, 'bid');
+  const a8  = depthAt(asks, mid, 0.0008, 'ask');
+  const b20 = depthAt(bids, mid, 0.002,  'bid');
+  const a20 = depthAt(asks, mid, 0.002,  'ask');
+
+  ['d5-total','d8-total','d20-total'].forEach(id =>
+    document.getElementById(id).classList.remove('loading'));
+
+  document.getElementById('d5-total').textContent  = fmtUSD(b5+a5);
+  document.getElementById('d5-bid').textContent    = 'bid ' + fmtUSD(b5);
+  document.getElementById('d5-ask').textContent    = 'ask ' + fmtUSD(a5);
+  document.getElementById('d8-total').textContent  = fmtUSD(b8+a8);
+  document.getElementById('d8-bid').textContent    = 'bid ' + fmtUSD(b8);
+  document.getElementById('d8-ask').textContent    = 'ask ' + fmtUSD(a8);
+  document.getElementById('d20-total').textContent = fmtUSD(b20+a20);
+  document.getElementById('d20-bid').textContent   = 'bid ' + fmtUSD(b20);
+  document.getElementById('d20-ask').textContent   = 'ask ' + fmtUSD(a20);
+
+  renderBook(bids, asks, mid);
+
+  const now = new Date();
+  document.getElementById('book-ts').textContent = now.toLocaleTimeString();
+  document.getElementById('updated-at').textContent = now.toLocaleTimeString();
+  document.getElementById('status-dot').className = 'live';
+}
+
+/* ── WebSocket management ───────────────────────────────────────────── */
+function teardownWS() {
+  wsIntended = false;
+  clearTimeout(wsReconnTimer);
+  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+  wsActiveCoin = null;
+}
+
+function connectWS(coin) {
+  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+  wsIntended   = true;
+  wsActiveCoin = coin;
+
+  const socket = new WebSocket(WS_URL);
+  ws = socket;
+
+  socket.onopen = () => {
+    if (socket !== ws) return;          // stale socket
+    wsReconnDelay = 2000;              // reset backoff on successful connect
+    setWsBadge('reconnecting', 'subscribing');
+    socket.send(JSON.stringify({
+      method: 'subscribe',
+      subscription: { type: 'l2Book', coin }
+    }));
+  };
+
+  socket.onmessage = (e) => {
+    if (socket !== ws) return;
+    let msg;
+    try { msg = JSON.parse(e.data); } catch (_) { return; }
+
+    if (msg.channel === 'l2Book') {
+      const data = msg.data;
+      // Guard: only accept ticks for the coin we asked for
+      if (data?.coin && data.coin !== coin) return;
+      const bids = data?.levels?.[0];
+      const asks = data?.levels?.[1];
+      setWsBadge('streaming', 'live');
+      applyBookTick(bids, asks);
+    }
+  };
+
+  socket.onclose = () => {
+    if (socket !== ws) return;
+    ws = null;
+    if (!wsIntended) return;           // deliberate close, don't reconnect
+    setWsBadge('reconnecting', 'reconnecting…');
+    document.getElementById('status-dot').className = '';
+    wsReconnTimer = setTimeout(() => {
+      if (wsIntended && wsActiveCoin) connectWS(wsActiveCoin);
+    }, wsReconnDelay);
+    wsReconnDelay = Math.min(wsReconnDelay * 1.5, 30000);  // cap at 30s
+  };
+
+  socket.onerror = () => {
+    setWsBadge('error', 'ws error');
+    try { socket.close(); } catch (_) {}
+  };
+}
+
+/* ── Candle / ADV (REST, refreshed every 5 min) ─────────────────────── */
+async function loadCandles(coin) {
+  document.getElementById('refresh-btn').textContent = '↺ loading…';
+  try {
+    const now = Date.now();
+    const candles = await post({
+      type: 'candleSnapshot',
+      req: { coin, interval: '1d', startTime: now - 30*86400*1000, endTime: now }
+    });
+    if (candles?.length) {
+      const adv = renderVolChart(candles);
+      document.getElementById('adv-val').textContent = fmtUSD(adv);
+      document.getElementById('adv-val').classList.remove('loading');
+      document.getElementById('adv-sub').textContent = candles.length + '-day sample';
+    }
+  } catch(e) {
+    console.warn('[candles]', e.message);
+  }
+  document.getElementById('refresh-btn').textContent = '↺ refresh vol';
+  clearTimeout(candleTimer);
+  // Only schedule next auto-refresh if still on the same index
+  if (wsActiveCoin === coin) {
+    candleTimer = setTimeout(() => loadCandles(coin), 5 * 60 * 1000);
+  }
+}
+
+function renderVolChart(candles) {
+  const labels = candles.map(c => {
+    const d = new Date(c.t);
+    return (d.getMonth()+1) + '/' + d.getDate();
+  });
+  const data = candles.map(c => parseFloat(c.v) * parseFloat(c.c));
+  const adv  = data.reduce((a,b) => a+b, 0) / data.length;
+
+  if (candles.length >= 2) {
+    const fmt = d => (d.getMonth()+1)+'/'+d.getDate()+'/'+String(d.getFullYear()).slice(2);
+    document.getElementById('vol-range').textContent =
+      fmt(new Date(candles[0].t)) + ' → ' + fmt(new Date(candles[candles.length-1].t));
+  }
+
+  if (volChart) { volChart.destroy(); volChart = null; }
+  volChart = new Chart(document.getElementById('volChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Daily Volume', data, backgroundColor: 'rgba(34,201,122,0.33)', borderColor: 'rgba(34,201,122,0.55)', borderWidth: 1, borderRadius: 2, order: 2 },
+        { label: '30d ADV', data: data.map(() => adv), type: 'line', borderColor: 'rgba(245,166,35,0.8)', borderWidth: 1.5, borderDash: [5,4], pointRadius: 0, fill: false, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#181c23', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+          titleColor: '#6b7280', bodyColor: '#e8eaf0',
+          titleFont: { family: "'IBM Plex Mono',monospace", size: 11 },
+          bodyFont:  { family: "'IBM Plex Mono',monospace", size: 12 },
+          callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtUSD(ctx.raw) }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#3d4450', font: { family: "'IBM Plex Mono',monospace", size: 10 }, maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false }, border: { color: 'rgba(255,255,255,0.07)' } },
+        y: { ticks: { color: '#3d4450', font: { family: "'IBM Plex Mono',monospace", size: 10 }, callback: v => fmtUSD(v) }, grid: { color: 'rgba(255,255,255,0.04)' }, border: { display: false } }
+      }
+    }
+  });
+  return adv;
+}
+
+function showErr(msg)  { const b = document.getElementById('err-bar');  b.textContent = '⚠ ' + msg; b.style.display = 'block'; document.getElementById('status-dot').className = 'err'; }
+function showInfo(msg) { const b = document.getElementById('info-bar'); b.textContent = 'ℹ ' + msg; b.style.display = 'block'; }
+function clearBars()   { ['err-bar','info-bar'].forEach(id => document.getElementById(id).style.display = 'none'); }
+
+/* ── Bootstrap ──────────────────────────────────────────────────────── */
+async function initIndex(idx) {
+  const cfg = INDICES[idx];
+  clearBars();
+
+  try {
+    if (!resolvedCoins[idx]) {
+      showInfo('Scanning Hyperliquid universe for ' + cfg.scanLabel + '…');
+      resolvedCoins[idx] = await discoverCoin(cfg);
+      if (idx !== activeIdx) return;   // user switched while we were scanning
+      clearBars();
+      document.getElementById('coin-detected').textContent = 'key: ' + resolvedCoins[idx];
+      console.log('[HL] resolved coin:', resolvedCoins[idx], 'for', idx);
+    }
+    if (idx !== activeIdx) return;
+
+    const coin = resolvedCoins[idx];
+    connectWS(coin);
+    loadCandles(coin);
+
+  } catch(e) {
+    resolvedCoins[idx] = null;
+    showErr(e.message);
+    setWsBadge('error', 'error');
+  }
+}
+
+/* Pause WS when tab is hidden, resume when visible */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    teardownWS();
+  } else if (resolvedCoins[activeIdx]) {
+    wsIntended = true;
+    connectWS(resolvedCoins[activeIdx]);
+  }
+});
+
+initIndex(activeIdx);
+</script>
+</body>
+</html>
