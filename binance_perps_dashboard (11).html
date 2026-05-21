@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binance Perps — Live Dashboard</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--bg2:#f5f5f4;--bg3:#eceae7;
+  --text:#1a1a18;--text2:#6b6b67;--text3:#a8a8a3;
+  --border:rgba(0,0,0,0.09);--border2:rgba(0,0,0,0.16);
+  --green:#0f6e56;--red:#993c1d;--blue:#3266ad;--blue-l:#b5d4f4;--blue-m:#378add;
+  --warn:#d97706;--ok:#16a34a;
+  --radius:8px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono','Fira Code',Consolas,monospace;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1c1c1a;--bg2:#252523;--bg3:#2e2e2c;
+    --text:#f0ede8;--text2:#a8a8a3;--text3:#6e6e6a;
+    --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.15);
+  }
+}
+body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
+#app{max-width:1100px;margin:0 auto;padding:24px 20px 60px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);animation:blink 2s ease-in-out infinite;flex-shrink:0}
+.pulse.warn{background:var(--warn)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--text2);border-radius:50%;animation:spin .7s linear infinite}
+.header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+.header-l{display:flex;align-items:center;gap:10px}
+.header-title{font-size:17px;font-weight:600;letter-spacing:-.02em}
+.badge{font-size:11px;color:var(--text2);background:var(--bg2);padding:2px 10px;border-radius:20px;border:0.5px solid var(--border)}
+.header-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ts{font-family:var(--mono);font-size:12px;color:var(--text2)}
+.note{font-size:11px;color:var(--text3)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+.metric{background:var(--bg2);border-radius:var(--radius);padding:13px 15px;border:0.5px solid var(--border)}
+.metric-label{font-size:10.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.metric-value{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.metric-sub{font-size:11px;color:var(--text2);margin-top:3px}
+.tabs{display:flex;border-bottom:0.5px solid var(--border2);margin-bottom:16px}
+.tab{background:none;border:none;cursor:pointer;padding:7px 16px;font-size:13px;font-weight:500;color:var(--text2);border-bottom:2px solid transparent;transition:all .15s;font-family:var(--font)}
+.tab.active{color:var(--text);border-bottom-color:var(--text)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.scroll-x{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{text-align:right;padding:7px 12px;font-weight:500;font-size:11px;color:var(--text2);border-bottom:0.5px solid var(--border2);cursor:pointer;user-select:none;white-space:nowrap}
+thead th:first-child{text-align:left}
+thead th:hover{color:var(--text)}
+tbody td{text-align:right;padding:7px 12px;border-bottom:0.5px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody td:first-child{text-align:left;font-weight:500}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--bg2)}
+.t1{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:#dbeafe;color:#1d4ed8;font-weight:600;margin-left:6px}
+.t2{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:#fef9c3;color:#92400e;font-weight:600;margin-left:6px}
+.g{color:var(--green)}.r{color:var(--red);font-weight:500}
+.sa::after{content:' ↑';opacity:.55}.sd::after{content:' ↓';opacity:.55}.sn::after{content:' ↕';opacity:.3}
+.chart-wrap{margin-bottom:28px}
+.chart-label{font-size:12px;color:var(--text2);margin-bottom:10px;font-weight:500}
+.legend{display:flex;gap:14px;margin-bottom:10px;font-size:12px;color:var(--text2);flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:4px}
+.tier-sep{font-size:11.5px;color:var(--text2);font-weight:500;margin:4px 0 16px;padding-top:20px;border-top:0.5px solid var(--border2);display:flex;align-items:center;gap:8px}
+
+.loading .spinner{margin:0 auto 12px;width:20px;height:20px}
+.err{background:#fef2f2;border:0.5px solid #fecaca;border-radius:var(--radius);padding:14px 16px;color:#991b1b;font-size:13px;margin-bottom:12px}
+.err b{display:block;margin-bottom:4px}
+@media(prefers-color-scheme:dark){.err{background:#3b1111;border-color:#7f1d1d;color:#fca5a5}.t1{background:#1e3a5f;color:#93c5fd}.t2{background:#3b2a00;color:#fcd34d}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="header-l">
+      <span class="header-title">Binance perps</span>
+      <span class="badge">10 instruments · live</span>
+    </div>
+    <div class="header-r">
+      <span id="dot" class="pulse"></span>
+      <span id="uts" class="ts"></span>
+      <span class="note">book 30s · klines 5m</span>
+      <span id="clk" class="ts"></span>
+    </div>
+  </div>
+  <div id="err" style="display:none" class="err"><b>Could not reach Binance FAPI</b><span id="emsg"></span></div>
+  <div id="load" class="loading"><div class="spinner"></div><p>Connecting to Binance FAPI…</p><p style="font-size:12px;margin-top:6px;opacity:.6">Fetching 10 order books + 30-day klines</p></div>
+  <div id="main" style="display:none">
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Tight Band (5 bps)</div><div class="metric-value" id="m1">—</div><div class="metric-sub">BTC · ETH · SOL · XRP · DOGE</div></div>
+      <div class="metric"><div class="metric-label">Mid Band (8 bps)</div><div class="metric-value" id="m2">—</div><div class="metric-sub">ADA · LINK · SUI · LTC · TAO</div></div>
+      <div class="metric"><div class="metric-label">Broad Band (20 bps)</div><div class="metric-value" id="m3">—</div><div class="metric-sub" id="m3s">all instruments</div></div>
+      <div class="metric"><div class="metric-label">Overall SLA</div><div class="metric-value" id="m4">—</div><div class="metric-sub" id="m4s">20 checks</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="table">All instruments</button>
+      <button class="tab" data-tab="depth">Depth</button>
+      <button class="tab" data-tab="volume">Volume</button>
+    </div>
+    <div id="panel-table" class="tab-panel active">
+      <div class="scroll-x">
+        <table>
+          <thead><tr>
+            <th class="sn" data-k="sym" data-d="1">Symbol</th>
+            <th class="sn" data-k="mid" data-d="1">Mid price</th>
+            <th class="sn" data-k="spread" data-d="1">Spread bps</th>
+            <th class="sn" data-k="comb5" data-d="1">Depth 5 bps</th>
+            <th class="sn" data-k="comb8" data-d="1">Depth 8 bps</th>
+            <th class="sn" data-k="comb20" data-d="1">Depth 20 bps</th>
+            <th class="sd" data-k="adv" data-d="-1">ADV 30d</th>
+            <th class="sn" data-k="ratio" data-d="1">Depth / ADV</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="panel-depth" class="tab-panel">
+      <div class="tier-sep" style="margin-top:0;padding-top:0;border-top:none"><span class="t1">5 bps</span> BTC · ETH · SOL · XRP · DOGE</div>
+      <div class="chart-wrap">
+        <div class="chart-label">Tight Band (5 bps) — combined bid + ask depth</div>
+        <div style="position:relative;height:240px"><canvas id="cdc5"></canvas></div>
+      </div>
+      <div class="tier-sep"><span class="t2">8 bps</span> ADA · LINK · SUI · LTC · TAO</div>
+      <div class="chart-wrap">
+        <div class="chart-label">Mid Band (8 bps) — combined bid + ask depth</div>
+        <div style="position:relative;height:240px"><canvas id="cdc8"></canvas></div>
+      </div>
+      <div class="tier-sep"><span style="background:var(--text2);color:var(--bg);padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700">20 bps</span> all instruments</div>
+      <div class="chart-wrap">
+        <div class="chart-label">Broad Band (20 bps) — combined bid + ask depth</div>
+        <div style="position:relative;height:420px"><canvas id="cdc20"></canvas></div>
+      </div>
+    </div>
+    <div id="panel-volume" class="tab-panel">
+      <div class="chart-wrap">
+        <div class="chart-label">ADV 30d — all instruments</div>
+        <div class="legend"><span><span class="dot" style="background:#3266ad"></span>ADV (30d)</span><span><span class="dot" style="background:#888884"></span>Min</span><span><span class="dot" style="background:#0f6e56"></span>Max</span></div>
+        <div id="vload" style="padding:30px 0;color:var(--text2);font-size:13px;text-align:center">Loading 30-day klines…</div>
+        <div style="position:relative;height:460px;display:none" id="vwrap"><canvas id="cvol"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script>
+const SYMS=['BTCUSDT','ETHUSDT','XRPUSDT','SOLUSDT','DOGEUSDT','ADAUSDT','SUIUSDT','LINKUSDT','LTCUSDT','TAOUSDT'];
+const T1=new Set(['BTC','ETH','XRP','SOL']);
+const API='https://fapi.binance.com/fapi/v1';
+let rows=[],vols={},sk='adv',sd=-1,charts={};
+
+// Per-asset SLA thresholds (combined bid+ask depth)
+const SLA={
+  BTC: {tight5:4.5e6, tight8:null, broad20:15e6},
+  ETH: {tight5:4.5e6, tight8:null, broad20:15e6},
+  SOL: {tight5:1e6,   tight8:null, broad20:3.5e6},
+  XRP: {tight5:450e3, tight8:null, broad20:1.5e6},
+  DOGE:{tight5:300e3, tight8:null, broad20:1.5e6},
+  ADA: {tight5:null,  tight8:70e3, broad20:650e3},
+  LINK:{tight5:null,  tight8:90e3, broad20:400e3},
+  SUI: {tight5:null,  tight8:100e3,broad20:650e3},
+  LTC: {tight5:null,  tight8:100e3,broad20:500e3},
+  TAO: {tight5:null,  tight8:50e3, broad20:300e3},
+};
+const SLA_5BPS =['BTC','ETH','SOL','XRP','DOGE']; // have tight 5bps threshold
+const SLA_8BPS =['ADA','LINK','SUI','LTC','TAO'];  // have mid 8bps threshold
+const SLA_20BPS=[...SLA_5BPS,...SLA_8BPS];          // all have broad 20bps threshold
+
+Chart.register(ChartDataLabels);
+
+const base=s=>s.replace('USDT','');
+const dk=()=>matchMedia('(prefers-color-scheme:dark)').matches;
+const f$=v=>{if(v==null)return'—';if(v>=1e9)return'$'+(v/1e9).toFixed(1)+'B';if(v>=1e6)return'$'+(v/1e6).toFixed(1)+'M';if(v>=1e3)return'$'+(v/1e3).toFixed(0)+'K';return'$'+v.toFixed(0)};
+const fM=v=>v>=1000?'$'+v.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2}):v<0.01?'$'+v.toFixed(5):'$'+v.toFixed(4);
+const fP=v=>v==null?'—':(v*100).toFixed(3)+'%';
+const yM=v=>v>=1000?'$'+(v/1000).toFixed(0)+'B':'$'+v+'M';
+
+function depth(bids,asks,mid,bps){
+  const lo=mid*(1-bps/10000),hi=mid*(1+bps/10000);
+  return{
+    bid:bids.filter(([p])=>+p>=lo).reduce((s,[p,q])=>s+(+p)*(+q),0),
+    ask:asks.filter(([p])=>+p<=hi).reduce((s,[p,q])=>s+(+p)*(+q),0),
+    get comb(){return this.bid+this.ask}
+  };
+}
+
+async function loadBook(){
+  const[ticks,...deps]=await Promise.all([
+    fetch(`${API}/ticker/bookTicker`).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
+    ...SYMS.map(s=>fetch(`${API}/depth?symbol=${s}&limit=1000`).then(r=>r.json()))
+  ]);
+  rows=SYMS.map((sym,i)=>{
+    const t=(Array.isArray(ticks)?ticks.find(x=>x.symbol===sym):ticks);
+    const bid=+t.bidPrice,ask=+t.askPrice,mid=(bid+ask)/2;
+    const d5=depth(deps[i].bids,deps[i].asks,mid,5);
+    const d8=depth(deps[i].bids,deps[i].asks,mid,8);
+    const d20=depth(deps[i].bids,deps[i].asks,mid,20);
+    return{sym:base(sym),symbol:sym,tier:T1.has(base(sym))?1:2,mid,spread:(ask-bid)/mid*10000,
+      bid5:d5.bid,ask5:d5.ask,comb5:d5.bid+d5.ask,
+      comb8:d8.bid+d8.ask,
+      bid20:d20.bid,ask20:d20.ask,comb20:d20.bid+d20.ask,
+      ...(vols[sym]||{adv:null,minVol:null,maxVol:null})};
+  });
+}
+
+async function loadVols(){
+  const res=await Promise.all(SYMS.map(s=>fetch(`${API}/klines?symbol=${s}&interval=1d&limit=30`).then(r=>r.json())));
+  SYMS.forEach((s,i)=>{const v=res[i].map(k=>+k[7]);vols[s]={adv:v.reduce((a,b)=>a+b,0)/v.length,minVol:Math.min(...v),maxVol:Math.max(...v)};});
+  rows=rows.map(r=>({...r,...(vols[r.symbol]||{})}));
+}
+
+function gc(extra={}){
+  const d=dk();
+  return{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},datalabels:{display:false},tooltip:{backgroundColor:d?'#252523':'#fff',borderColor:d?'rgba(255,255,255,.12)':'rgba(0,0,0,.1)',borderWidth:1,titleColor:d?'#f0ede8':'#1a1a18',bodyColor:d?'#a8a8a3':'#6b6b67',padding:10},...(extra.plugins||{})},
+    scales:{x:{grid:{display:false},ticks:{color:d?'#a8a8a3':'#6b6b67',font:{size:12}}},y:{grid:{color:d?'rgba(255,255,255,.07)':'rgba(0,0,0,.07)'},ticks:{color:d?'#a8a8a3':'#6b6b67',font:{size:11},callback:yM},border:{display:false}},...(extra.scales||{})}};
+}
+
+function gcH(fmtLabel,extra={}){
+  const d=dk(),tc=d?'#a8a8a3':'#6b6b67';
+  return{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+    plugins:{
+      legend:{display:false},
+      tooltip:{backgroundColor:d?'#252523':'#fff',borderColor:d?'rgba(255,255,255,.12)':'rgba(0,0,0,.1)',borderWidth:1,titleColor:d?'#f0ede8':'#1a1a18',bodyColor:d?'#a8a8a3':'#6b6b67',padding:10,callbacks:{label:c=>c.dataset.label+': '+fmtLabel(c.raw)}},
+      datalabels:{display:true,anchor:'end',align:'right',clamp:true,formatter:fmtLabel,font:{size:10.5,family:getComputedStyle(document.body).getPropertyValue('--mono')||'monospace'},color:tc,padding:{right:4}},
+      ...(extra.plugins||{})
+    },
+    scales:{
+      x:{grid:{color:d?'rgba(255,255,255,.07)':'rgba(0,0,0,.07)'},ticks:{color:tc,font:{size:11},callback:yM},border:{display:false},...(extra.scales?.x||{})},
+      y:{grid:{display:false},ticks:{color:d?'#f0ede8':'#1a1a18',font:{size:13,weight:'500'}},border:{display:false},...(extra.scales?.y||{})}
+    },layout:{padding:{right:54}}};
+}
+
+function kill(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
+
+function renderTable(){
+  const data=[...rows].map(d=>({...d,ratio:d.adv?d.comb5/d.adv:null}))
+    .sort((a,b)=>sd*((a[sk]??-Infinity)>(b[sk]??-Infinity)?1:-1));
+  document.getElementById('tbody').innerHTML=data.map(d=>`<tr>
+    <td>${d.sym}</td>
+    <td>${fM(d.mid)}</td>
+    <td class="${d.spread<=.5?'g':d.spread>=3?'r':''}">${d.spread.toFixed(2)}</td>
+    <td>${f$(d.comb5)}</td><td>${f$(d.comb8)}</td><td>${f$(d.comb20)}</td><td>${f$(d.adv)}</td>
+    <td class="${d.ratio>=.001?'g':''}">${fP(d.ratio)}</td></tr>`).join('');
+}
+
+function renderMetrics(){
+  const get=sym=>rows.find(d=>d.sym===sym);
+  const passColor=(n,total)=>n===total?'var(--ok)':n===0?'var(--red)':'var(--warn)';
+  const fmt=(n,total)=>n+'/'+total;
+
+  const pass5  =SLA_5BPS.filter(s=>{const r=get(s);return r&&r.comb5>=SLA[s].tight5;});
+  const pass8  =SLA_8BPS.filter(s=>{const r=get(s);return r&&r.comb8>=SLA[s].tight8;});
+  const pass20 =SLA_20BPS.filter(s=>{const r=get(s);return r&&r.comb20>=SLA[s].broad20;});
+  const totalPass=pass5.length+pass8.length+pass20.length;
+  const totalChecks=SLA_5BPS.length+SLA_8BPS.length+SLA_20BPS.length; // 5+5+10=20
+
+  const set=(id,n,total,subId,failList)=>{
+    const el=document.getElementById(id);
+    el.textContent=fmt(n,total);
+    el.style.color=passColor(n,total);
+    if(subId){
+      const failing=failList.filter(s=>!{pass5,pass8,pass20}[id==='m1'?'pass5':id==='m2'?'pass8':'pass20'].includes(s));
+      document.getElementById(subId).textContent=failing.length?'failing: '+failing.join(', '):'all passing';
+    }
+  };
+
+  const m1=document.getElementById('m1');
+  m1.textContent=fmt(pass5.length,SLA_5BPS.length);
+  m1.style.color=passColor(pass5.length,SLA_5BPS.length);
+
+  const m2=document.getElementById('m2');
+  m2.textContent=fmt(pass8.length,SLA_8BPS.length);
+  m2.style.color=passColor(pass8.length,SLA_8BPS.length);
+
+  const m3=document.getElementById('m3');
+  m3.textContent=fmt(pass20.length,SLA_20BPS.length);
+  m3.style.color=passColor(pass20.length,SLA_20BPS.length);
+  const fail20=SLA_20BPS.filter(s=>!pass20.includes(s));
+  document.getElementById('m3s').textContent=fail20.length?'failing: '+fail20.join(', '):'all passing';
+
+  const m4=document.getElementById('m4');
+  m4.textContent=fmt(totalPass,totalChecks);
+  m4.style.color=passColor(totalPass,totalChecks);
+  const fail5=SLA_5BPS.filter(s=>!pass5.includes(s));
+  const fail8=SLA_8BPS.filter(s=>!pass8.includes(s));
+  document.getElementById('m4s').textContent=[...fail5,...fail8,...fail20].length
+    ?'failing: '+[...new Set([...fail5,...fail8,...fail20])].join(', '):'all passing';
+}
+
+function renderDepth(){
+  const fmtM=v=>'$'+v.toFixed(2)+'M';
+  const singleBar=(canvasId,key,data,valKey,color,label)=>{
+    const s=[...data].sort((a,b)=>b[valKey]-a[valKey]);
+    kill(key);
+    charts[key]=new Chart(document.getElementById(canvasId),{type:'bar',
+      data:{labels:s.map(d=>d.sym),datasets:[
+        {label:label,data:s.map(d=>+(d[valKey]/1e6).toFixed(2)),backgroundColor:color,borderRadius:4,maxBarThickness:28}]},
+      options:gcH(fmtM)});
+  };
+  singleBar('cdc5','dc5',rows.filter(d=>SLA_5BPS.includes(d.sym)),'comb5','#3266ad','Tight (5 bps)');
+  singleBar('cdc8','dc8',rows.filter(d=>SLA_8BPS.includes(d.sym)),'comb8','#8b5cf6','Mid (8 bps)');
+  singleBar('cdc20','dc20',rows,'comb20','#b5d4f4','Broad (20 bps)');
+}
+
+function renderVolume(){
+  const with_v=rows.filter(d=>d.adv!=null);
+  if(!with_v.length)return;
+  const fmtM=v=>'$'+Number(v).toLocaleString()+'M';
+  const volChart=(wrapId,loadId,canvasId,key,data)=>{
+    document.getElementById(loadId).style.display='none';
+    document.getElementById(wrapId).style.display='block';
+    const s=[...data].sort((a,b)=>b.adv-a.adv);
+    kill(key);
+    charts[key]=new Chart(document.getElementById(canvasId),{type:'bar',
+      data:{labels:s.map(d=>d.sym),datasets:[
+        {label:'ADV',data:s.map(d=>+(d.adv/1e6).toFixed(0)),backgroundColor:'#3266ad',borderRadius:3,maxBarThickness:22},
+        {label:'Min',data:s.map(d=>+(d.minVol/1e6).toFixed(0)),backgroundColor:'#888884',borderRadius:3,maxBarThickness:22},
+        {label:'Max',data:s.map(d=>+(d.maxVol/1e6).toFixed(0)),backgroundColor:'#0f6e56',borderRadius:3,maxBarThickness:22}]},
+      options:gcH(fmtM)});
+  };
+  volChart('vwrap','vload','cvol','vol',with_v);
+}
+
+/* tabs */
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('panel-'+b.dataset.tab).classList.add('active');
+  const t=b.dataset.tab;
+  if(t==='depth')renderDepth();
+  if(t==='volume')renderVolume();
+}));
+
+/* table sort */
+document.querySelectorAll('thead th').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k;
+  if(k===sk)sd*=-1;else{sk=k;sd=+(th.dataset.d)||1;}
+  document.querySelectorAll('thead th').forEach(h=>h.className='sn');
+  th.className=sd===1?'sa':'sd';
+  renderTable();
+}));
+
+/* clock */
+setInterval(()=>{document.getElementById('clk').textContent=new Date().toUTCString().replace(' GMT','');},1000);
+document.getElementById('clk').textContent=new Date().toUTCString().replace(' GMT','');
+
+/* boot */
+(async()=>{
+  const dot=document.getElementById('dot');
+  try{
+    dot.className='pulse warn';
+    await Promise.all([loadBook(),loadVols()]);
+    document.getElementById('load').style.display='none';
+    document.getElementById('main').style.display='block';
+    renderMetrics();renderTable();
+    document.getElementById('uts').textContent='updated '+new Date().toUTCString().slice(17,25)+' UTC';
+    dot.className='pulse';
+  }catch(e){
+    document.getElementById('load').style.display='none';
+    document.getElementById('emsg').textContent=' '+e.message;
+    document.getElementById('err').style.display='block';
+    document.getElementById('main').style.display='block';
+    dot.className='pulse';
+  }
+
+  setInterval(async()=>{
+    try{dot.className='pulse warn';await loadBook();renderMetrics();renderTable();
+      const at=document.querySelector('.tab.active')?.dataset.tab;
+      if(at==='depth')renderDepth();
+      document.getElementById('uts').textContent='updated '+new Date().toUTCString().slice(17,25)+' UTC';
+      document.getElementById('err').style.display='none';
+    }catch(e){document.getElementById('emsg').textContent=' '+e.message;document.getElementById('err').style.display='block';}
+    dot.className='pulse';
+  },30000);
+
+  setInterval(async()=>{
+    try{await loadVols();renderMetrics();renderTable();
+      if(document.querySelector('.tab.active')?.dataset.tab==='volume')renderVolume();
+    }catch(e){console.warn('klines',e);}
+  },5*60*1000);
+})();
+</script>
+</body>
+</html>
